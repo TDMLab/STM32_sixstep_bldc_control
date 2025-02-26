@@ -2,7 +2,7 @@
 Project for 6-step control of BLDC motors on the STM32G431CBU microcontroller.
 A single-shunt current measurement circuit is used.
 
-![image](https://github.com/user-attachments/assets/d2b7815b-20a1-4a50-847d-cedd1ee08832)
+![image](https://github.com/user-attachments/assets/7749011c-9027-4bc7-a5bb-4d5aff7a8dbb)
 
 ![image](https://github.com/user-attachments/assets/6a7c862c-7ae8-4fdb-8a9e-e32d6c3500b0)
 
