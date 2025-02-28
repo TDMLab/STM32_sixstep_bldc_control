@@ -4,19 +4,12 @@
  *  Created on: Dec 18, 2024
  *      Author: TDM
  */
+#include "main.h"
 #include "MC_SixStep.h"
 #include "stdint.h"
-#include "main.h"
+#include "stdbool.h"
 
-#define STATE_1 (uint8_t) 1
-#define STATE_2 (uint8_t) 2
-#define STATE_3 (uint8_t) 3
-#define STATE_4 (uint8_t) 4
-#define STATE_5 (uint8_t) 5
-#define STATE_6 (uint8_t) 6
-
-#define NEGATIVE (int8_t)-1
-#define POSITIVE (int8_t) 1
+extern TIM_HandleTypeDef htim1;
 
 #define CCMR1_STEP1_HSMOD         	(uint16_t)(0x4868)
 #define CCMR1_STEP2_HSMOD        	(uint16_t)(0x0868)
@@ -65,6 +58,11 @@ void MC_SixStep_LoadNextStep(MC_SixStep_t *pHandle) {
 	if (pHandle->NextStepFlag == true) {
 		pHandle->NextStepFlag = false;
 		switch (pHandle->NextStep) {
+		case 1:
+			TIM1->CCER = CCER_VH_WH_VL_WL;
+			TIM1->CCMR1 = CCMR1_STEP6_HSMOD;
+			TIM1->CCMR2 = CCMR2_STEP6_HSMOD;
+			break;
 		case 2:
 			TIM1->CCER = CCER_UH_VH_UL_VL;
 			TIM1->CCMR1 = CCMR1_STEP1_HSMOD;
@@ -90,33 +88,68 @@ void MC_SixStep_LoadNextStep(MC_SixStep_t *pHandle) {
 			TIM1->CCMR1 = CCMR1_STEP5_HSMOD;
 			TIM1->CCMR2 = CCMR2_STEP5_HSMOD;
 			break;
-		case 1:
-			TIM1->CCER = CCER_VH_WH_VL_WL;
-			TIM1->CCMR1 = CCMR1_STEP6_HSMOD;
-			TIM1->CCMR2 = CCMR2_STEP6_HSMOD;
-			break;
 		default:
 			break;
 		}
 		TIM1->EGR |= (uint16_t) TIM_EGR_COMG;
-//		pHandle->Step = pHandle->NextStep;
 	}
 }
 
-void MC_SixStep_HallAngleCalc(MC_SixStep_t *pHandle) {
+void MC_SixStep_DisablePWM(void) {
+	__HAL_TIM_MOE_DISABLE_UNCONDITIONALLY(&htim1);
+}
+
+void MC_SixStep_EnablePWM(void) {
+	__HAL_TIM_MOE_ENABLE(&htim1);
+	__HAL_TIM_ENABLE_IT(&htim1, TIM_IT_CC4);
+//	__HAL_TIM_ENABLE_IT(&htim1, TIM_IT_CC4 | TIM_IT_UPDATE);
+}
+
+void MC_SixStep_UnitPWM(void) {
+	TIM1->CCR1 = 0;
+	TIM1->CCR2 = 0;
+	TIM1->CCR3 = 0;
+	TIM1->CCR4 = 1;
+
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
+	  /*
+	  	Bit 0 CCPC: Capture/compare preloaded control
+	  	0:CCxE, CCxNE and OCxM bits are not preloaded
+	  	1:CCxE, CCxNE and OCxM bits are preloaded, after having been written, they are updated
+	  	only when a commutation event (COM) occurs (COMG bit set or rising edge detected on
+	  	tim_trgi, depending on the CCUS bit).
+	  */
+	  	TIM1->CR2 |= (uint16_t) TIM_CR2_CCPC;
+	  	__HAL_TIM_ENABLE_IT(&htim1, TIM_IT_CC4);
+//	  	__HAL_TIM_ENABLE_IT(&htim1, TIM_IT_CC4 | TIM_IT_UPDATE);
+
+}
+
+
+bool MC_SixStep_ReadHallState(MC_SixStep_t *pHandle) {
 	pHandle->PrevHallState = pHandle->HallState;
 
 	/* HALL Sensor 120 degrees */
 	pHandle->HallState = (((GPIOB->IDR & GPIO_IDR_IDR_8) >> 8) << 2)
 			| (((GPIOB->IDR & GPIO_IDR_IDR_7) >> 7) << 1)
 			| ((GPIOB->IDR & GPIO_IDR_IDR_6) >> 6);
+
 	/* HALL Sensor 60 degrees */
 	/*
-	pHandle->HallState = ((((GPIOB->IDR & GPIO_IDR_IDR_7) ^ 1U) >> 7) << 2)
-			| (((GPIOB->IDR & GPIO_IDR_IDR_8) >> 8) << 1)
-			| ((GPIOB->IDR & GPIO_IDR_IDR_6) >> 6);
+	 pHandle->HallState = ((((GPIOB->IDR & GPIO_IDR_IDR_7) ^ 1U) >> 7) << 2)
+	 | (((GPIOB->IDR & GPIO_IDR_IDR_8) >> 8) << 1)
+	 | ((GPIOB->IDR & GPIO_IDR_IDR_6) >> 6);
 	*/
+	return true;
+}
 
+
+void MC_SixStep_HallAngleCalc(MC_SixStep_t *pHandle) {
 	switch (pHandle->HallState) {
 	case STATE_1: {
 		if (pHandle->PrevHallState == STATE_3) {
@@ -216,7 +249,7 @@ void MC_SixStep_HallAngleToELAngle(MC_SixStep_t *pHandle) {
 		pHandle->HallStepFlag = false;
 		pHandle->ElAngle = pHandle->MeasuredElAngle;
 	}
-	else {
+	else if (pHandle->State == RUN) {
 		pHandle->IncrementElAngle = pHandle->SpeedCntFiltr * 10500 / 65536;
 		pHandle->ElAngle += pHandle->IncrementElAngle;
 	}
@@ -257,7 +290,7 @@ bool MC_SixStep_ElAngleToStep(MC_SixStep_t *pHandle) {
 
 uint16_t SetPointCalc(MC_SixStep_t *pHandle, uint16_t ADC_DATA) {
 	#define ADC_OFFSET 1050
-	#define ADC_GAIN 8
+	#define ADC_GAIN 10
 
 	int32_t SetPoint;
 	SetPoint = (ADC_DATA - 1090) * ADC_GAIN;
