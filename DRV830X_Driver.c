@@ -47,4 +47,3 @@ void DRV8303_Unit(void) {
 	HAL_SPI_Receive(&hspi3, (uint8_t*) SPI_DATA_READ, 1, HAL_MAX_DELAY);
 	HAL_GPIO_WritePin(SPI3_NSS_GPIO_Port, SPI3_NSS_Pin, GPIO_PIN_SET);
 }
-
